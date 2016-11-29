@@ -6,7 +6,7 @@
 #include <signal.h>
 #include <getopt.h>
 
-
+#define ERR -1
 
 void parse_inputs (int argc, char *argv[], char **logFile, char **configFile) {
 	for (int i = 0; i < argc; i++) {
@@ -23,11 +23,37 @@ void parse_inputs (int argc, char *argv[], char **logFile, char **configFile) {
 	}
 }
 
-void main (int argc, char *argv[]) {
-	char *logFile    = NULL;
-	char *configFile = NULL;
+void openFiles (FILE *logFile, FILE *configFile, char *log, char *config) {
+	printf("%s\n", log);
+	logFile = fopen(log, "a");
+	
+	if( access( config, R_OK ) != -1 ) {
+    // file exists
+		printf("%s\n", config);
+		configFile = fopen(config, "r");
+	} else {
+    // file doesn't exist
+		printf("Config file %s does not exist or is not accessible\n", config);
+		fclose(logFile);
+		exit(ERR);
+	}
+}
 
-	parse_inputs(argc, argv, &logFile, &configFile);
-	printf("%s\n", logFile);
-	printf("%s\n", configFile);
+int main (int argc, char *argv[]) {
+	char *log    = "/var/log/phunt.log";
+	char *config = "/etc/phunt.conf";
+
+	parse_inputs(argc, argv, &log, &config);
+
+	FILE *logFile;
+	FILE *configFile;
+
+	openFiles(logFile, configFile, log, config);
+	
+	
+	//close files when done
+	fclose(logFile);
+	fclose(configFile);
+
+	return 1;
 }
