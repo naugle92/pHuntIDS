@@ -6,8 +6,15 @@
 #include <signal.h>
 #include <getopt.h>
 #include <time.h>
+#include <sys/utsname.h>
 
 #define ERR -1
+#define logSize 200
+#define tempStringSize 6
+#define startupStringSize 26
+
+//struct used to get the linux version
+struct utsname linVersion;
 
 //parse the arguments
 void parse_inputs (int argc, char *argv[], char **logFile, char **configFile) {
@@ -24,6 +31,7 @@ void parse_inputs (int argc, char *argv[], char **logFile, char **configFile) {
 		}
 	}
 }
+
 
 //open the log and config files if they can be opened, otherwise throw an error
 void openFiles (FILE **logFile, FILE **configFile, char *log, char *config) {
@@ -46,14 +54,58 @@ void openFiles (FILE **logFile, FILE **configFile, char *log, char *config) {
 	}
 }
 
-//return the current time as a string
+
+//return the current time as a string and remove the newline at the end.
 char * timeStamp() {
 	time_t currentTime;
 	currentTime = time(NULL);
-	return asctime(localtime(&currentTime));
+	char *stringTime = asctime(localtime(&currentTime));
+	stringTime[strlen(stringTime) - 1] = '\0';
+	return stringTime;
+}
+
+
+//put together a string of all important information and log it
+char * createEntry (char *news) {
+	char *entry = malloc(logSize);
+	entry[0] = '\0';
+	//add timeStamp
+	strcat(entry, timeStamp());
+	strcat(entry, " ");
+	strcat(entry, linVersion.nodename);
+	strcat(entry, " ");
+	strcat(entry, "phunt: ");
+	strcat(entry, news);
+	return entry;
+}
+
+//create the string that is logged on startup, contains the PID of this phunt
+char * startup() {
+	int pid = (int)getpid();
+	char temp[tempStringSize];
+	sprintf(temp, "%d", pid);
+
+	char * startupString = malloc(startupStringSize);
+	startupString[0] = '\0';
+	strcat(startupString, "phunt startup (PID=");
+	strcat(startupString, temp);
+	strcat(startupString, ")");
+
+	return startupString;
+}
+
+void enterLog(FILE **logFile, char *logEntry) {
+	fprintf(*logFile, "%s\n", logEntry);
 }
 
 void main (int argc, char *argv[]) {
+
+	//get the linux distribution for logging
+	uname(&linVersion);
+	//record when the program started
+	char *pHuntStartString = createEntry(startup());
+
+	//default log and config files
 	char *log    = "/var/log/phunt.log";
 	char *config = "/etc/phunt.conf";
 
@@ -63,12 +115,18 @@ void main (int argc, char *argv[]) {
 	FILE *configFile;
 
 	openFiles(&logFile, &configFile, log, config);
+
+	//start logging important events
+	enterLog(&logFile, pHuntStartString);
+
 	
-	printf("%s", timeStamp());
 
 
+	//enter the end of the program	
+	enterLog(&logFile, createEntry("phunt ended, closing files."));
 
 	//close files when done
 	fclose(logFile);
 	fclose(configFile);
+
 }
