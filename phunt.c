@@ -98,13 +98,23 @@ void enterLog(FILE **logFile, char *logEntry) {
 	fprintf(*logFile, "%s\n", logEntry);
 }
 
+
+//appends two to the end of one, returns the result
+char * concatenate(char *one, char *two) {
+	char * result = malloc(50);
+	strcpy(result, one);
+	strcat(result, two);
+	return result;
+}
+
+
 void main (int argc, char *argv[]) {
 
 	//get the linux distribution for logging
 	uname(&linVersion);
 	//record when the program started
 	char *pHuntStartString = createEntry(startup());
-
+	char *tempString =  malloc(50);
 	//default log and config files
 	char *log    = "/var/log/phunt.log";
 	char *config = "/etc/phunt.conf";
@@ -119,7 +129,15 @@ void main (int argc, char *argv[]) {
 	//start logging important events
 	enterLog(&logFile, pHuntStartString);
 
+	//log the opening of the log file
+	enterLog(&logFile, createEntry(concatenate("opened logfile ", log)));
+
+	//log the start of parsing
+	enterLog(&logFile, createEntry(concatenate("parsing configuration file ", config)));	
 	
+	//start actually parsing
+
+
 
 
 	//enter the end of the program	
