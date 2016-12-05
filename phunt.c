@@ -119,6 +119,14 @@ void main (int argc, char *argv[]) {
 	char *log    = "/var/log/phunt.log";
 	char *config = "/etc/phunt.conf";
 
+	char * line = NULL;
+	size_t length = 0;
+	ssize_t read;
+	char * command = " ";
+	char * action = " ";
+	char * type = " ";
+	char * param = " ";
+
 	parse_inputs(argc, argv, &log, &config);
 
 	FILE *logFile;
@@ -136,7 +144,18 @@ void main (int argc, char *argv[]) {
 	enterLog(&logFile, createEntry(concatenate("parsing configuration file ", config)));	
 	
 	//start actually parsing
-
+	while ((read = getline(&line, &length, configFile)) != -1) {
+    	//if this line is an actual command
+        if (line[0] != '#' && read > 1) {
+        	command = strtok(line, " ");
+		    action = command;
+		    command = strtok (NULL, " ");
+		    type = command;
+		    command = strtok (NULL, " \n");
+		    param = command;
+		    printf ("%s %s %s\n",action, type, param);
+    	}	
+    }
 
 
 
