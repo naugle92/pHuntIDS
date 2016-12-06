@@ -7,11 +7,22 @@
 #include <getopt.h>
 #include <time.h>
 #include <sys/utsname.h>
+#include <sys/types.h>
+#include <pwd.h>
+#include <sys/stat.h>
+#include <pwd.h>
+#include <dirent.h> 
+#include <sys/time.h> 
+#include <sys/resource.h>
+#include <sys/ptrace.h>
 
 #define ERR -1
 #define logSize 200
 #define tempStringSize 6
 #define startupStringSize 26
+#define SUCCESS 1
+#define FAILURE 0
+#define LOWERPRIORITY -20
 
 //struct used to get the linux version
 struct utsname linVersion;
@@ -107,6 +118,82 @@ char * concatenate(char *one, char *two) {
 	return result;
 }
 
+//figures out what to kill and kills it, returns 1 for success, 0 for failure
+int killit(char * action, char * type, char * param, FILE **logFile) {
+	
+	char *name;
+	int processID;
+	//stat struct that holds the uid needed for username
+	struct stat st;
+	//open /proc directory holding the process files
+	DIR *d;
+	struct dirent *dir;
+	d = opendir("/proc");
+	if (d) {
+		//read through all files and find the owner, if it is blacklist owner, kill it
+		while ((dir = readdir(d)) != NULL) {
+
+			//if we need to mess with the user
+			if (strcmp(type, "user") == 0) {
+	
+		      	stat(concatenate("/proc/",dir->d_name), &st);
+		    	struct passwd *pass;
+				pass = getpwuid(st.st_uid);
+				//kill the process if it is the blacklisted user
+				if (strcmp(pass->pw_name, param) == 0) {
+					printf("%s\n", dir->d_name);
+					processID = atoi(dir->d_name);
+					//kill the user and report it
+					if (strcmp("kill", action) == 0) {
+						enterLog(logFile, createEntry(concatenate("Killing process number ", dir->d_name)));
+						if (kill(processID, SIGKILL) == 0) 
+							enterLog(logFile, createEntry(concatenate("Successfully killed process number ", dir->d_name)));
+						else
+							enterLog(logFile, createEntry(concatenate("Did NOT successfully kill process number ", dir->d_name)));
+					//suspendthe user and report it
+					} else if (strcmp("suspend", action) == 0) {
+						enterLog(logFile, createEntry(concatenate("Suspending process number ", dir->d_name)));
+						if (kill(processID, SIGTSTP) == 0)
+							enterLog(logFile, createEntry(concatenate("Successfully suspended process number ", dir->d_name)));
+						else
+							enterLog(logFile, createEntry(concatenate("Did NOT successfully suspend process number ", dir->d_name)));
+					
+					//nice the user and report it
+					} else if (strcmp("nice", action) == 0) {
+						enterLog(logFile, createEntry(concatenate("Nicing process number ", dir->d_name)));
+						if (setpriority(PRIO_PROCESS, processID, LOWERPRIORITY) == 0) 
+							enterLog(logFile, createEntry(concatenate("Successfully niced process number ", dir->d_name)));
+						else
+							enterLog(logFile, createEntry(concatenate("Did NOT successfully nice process number ", dir->d_name)));
+					}
+				}
+
+			//if we are affecting based on path
+			} else if (strcmp(type, "path") == 0) {
+				//pathname is the path found by readlink based on the pid
+				char * pathname = malloc(70);
+				char * procpath = concatenate(concatenate("/proc/", dir->d_name), "/exe");
+				readlink(procpath, pathname, 70);
+				printf("%s\n", pathname);
+			//if we are affecting based on memory
+			} else if (strcmp(type, "memory") == 0) {
+				
+
+				//printf("mem mem\n");
+			}	    
+		}
+
+	closedir(d);
+	}
+
+	
+	return FAILURE;
+}
+
+void suspendit(char * type, char * param) {
+
+
+}
 
 void main (int argc, char *argv[]) {
 
@@ -126,6 +213,8 @@ void main (int argc, char *argv[]) {
 	char * action = " ";
 	char * type = " ";
 	char * param = " ";
+
+
 
 	parse_inputs(argc, argv, &log, &config);
 
@@ -153,8 +242,8 @@ void main (int argc, char *argv[]) {
 		    type = command;
 		    command = strtok (NULL, " \n");
 		    param = command;
-		    printf ("%s %s %s\n",action, type, param);
-    	}	
+		    killit(action, type, param, &logFile);
+		}	
     }
 
 
