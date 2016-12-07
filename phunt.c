@@ -26,6 +26,10 @@
 
 //struct used to get the linux version
 struct utsname linVersion;
+typedef struct {
+    long size,resident,share,text,lib,data,dt;
+} stats;
+
 
 //parse the arguments
 void parse_inputs (int argc, char *argv[], char **logFile, char **configFile) {
@@ -123,6 +127,11 @@ int killit(char * action, char * type, char * param, FILE **logFile) {
 	
 	char *name;
 	int processID;
+
+	long nothing;
+	long actualMemoryUsed;
+	FILE *statmFile;
+
 	//stat struct that holds the uid needed for username
 	struct stat st;
 	//open /proc directory holding the process files
@@ -149,6 +158,7 @@ int killit(char * action, char * type, char * param, FILE **logFile) {
 					//kill the user and report it
 					if (strcmp("kill", action) == 0) {
 						enterLog(logFile, createEntry(concatenate("Killing process number ", dir->d_name)));
+						printf("%lld memory, bitches\n", (long long)st.st_blocks);
 						if (kill(processID, SIGKILL) == 0) 
 							enterLog(logFile, createEntry(concatenate("Successfully killed process number ", dir->d_name)));
 						else
@@ -225,8 +235,18 @@ int killit(char * action, char * type, char * param, FILE **logFile) {
 
 			//if we are affecting based on memory
 			} else if (strcmp(type, "memory") == 0) {
-								
-
+				//printf("%d memory, bitches\n", (int)st.st_size);		
+				//open the statm file of each process to read the mem usage
+				statmFile = fopen(concatenate(concatenate("/proc/", dir->d_name), "/statm"),"r");
+				if(!statmFile){
+					printf("no statm file\n");;
+					//break;
+				} else {
+					//place the rss into a variable we can use
+					fscanf(statmFile,"%ld %ld", &nothing ,&actualMemoryUsed);
+					//printf("process %s using %ld memory\n", dir->d_name, actualMemoryUsed);
+					
+				}
 			}	    
 		}
 
