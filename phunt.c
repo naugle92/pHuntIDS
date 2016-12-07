@@ -26,9 +26,15 @@
 
 //struct used to get the linux version
 struct utsname linVersion;
-typedef struct {
-    long size,resident,share,text,lib,data,dt;
-} stats;
+
+int keepRunning = 1;
+
+
+//call this if Ctrl-c is pressed, it will cause the while loop to exit and program to end gracefully
+void youDontControlMe(int signal) {
+	printf(" Program ended\n");
+	keepRunning = 0;
+}
 
 
 //parse the arguments
@@ -50,14 +56,12 @@ void parse_inputs (int argc, char *argv[], char **logFile, char **configFile) {
 
 //open the log and config files if they can be opened, otherwise throw an error
 void openFiles (FILE **logFile, FILE **configFile, char *log, char *config) {
-	printf("%s\n", log);
 	*logFile = fopen(log, "a");
 	if (*logFile == NULL) 
 		perror ("Error opening log file");
 	
 	if( access( config, R_OK ) != -1 ) {
     // file exists and we are able to read it
-		printf("%s\n", config);
 		*configFile = fopen(config, "r");
 		if (*configFile == NULL) 
 			perror ("Error opening config file");
@@ -80,7 +84,7 @@ char * timeStamp() {
 }
 
 
-//put together a string of all important information and log it
+//put together a string of all important information and use it on a log
 char * createEntry (char *news) {
 	char *entry = malloc(logSize);
 	entry[0] = '\0';
@@ -109,6 +113,7 @@ char * startup() {
 	return startupString;
 }
 
+//prints the given string to the logfile
 void enterLog(FILE **logFile, char *logEntry) {
 	fprintf(*logFile, "%s\n", logEntry);
 }
@@ -122,19 +127,45 @@ char * concatenate(char *one, char *two) {
 	return result;
 }
 
-//figures out what to kill and kills it, returns 1 for success, 0 for failure
+int isSuspended(char * processID) {
+	char * procpath = concatenate(concatenate("/proc/", processID), "/status");
+	FILE * statusFile = fopen(procpath, "r");	
+
+	if(statusFile == NULL) {
+		printf("No status file for this document\n");
+		fclose(statusFile);
+		return 0;
+	}
+
+	char status[4][256];
+	
+
+	fscanf(statusFile, "%s %s %s %s", status[0],status[1],status[2],status[3]);
+	fclose(statusFile);
+	//if the status is T (stopped) send a 1
+	if (strcmp(status[3], "T") == 0) 
+		return 1;
+	else
+		return 0;
+}
+
+
+//This program handles the command. It kills, suspends, or nices appropriate files
 int killit(char * action, char * type, char * param, FILE **logFile) {
 	
 	char *name;
 	int processID;
 
+	//placeholder, literally used for nothing else
 	long nothing;
 	long actualMemoryUsed;
+	//statm file found in /proc/xx/ directory
 	FILE *statmFile;
 
 	//stat struct that holds the uid needed for username
 	struct stat st;
 	//open /proc directory holding the process files
+	//DIR used to "navigate" directories
 	DIR *d;
 	struct dirent *dir;
 	d = opendir("/proc");
@@ -143,41 +174,45 @@ int killit(char * action, char * type, char * param, FILE **logFile) {
 		while ((dir = readdir(d)) != NULL) {
 
 			stat(concatenate("/proc/",dir->d_name), &st);
-		    struct passwd *pass;
+			struct passwd *pass;
 			pass = getpwuid(st.st_uid);
 
-			//printf("%s\n", dir->d_name);
 			processID = atoi(dir->d_name);
 
 			//if we need to mess with the user
 			if (strcmp(type, "user") == 0) {
 	
-				//kill the process if it is the blacklisted user
+				//if the process is owned by the blacklisted user
 				if (strcmp(pass->pw_name, param) == 0) {
 					
-					//kill the user and report it
+					//kill the process and report it
 					if (strcmp("kill", action) == 0) {
 						enterLog(logFile, createEntry(concatenate("Killing process number ", dir->d_name)));
-						printf("%lld memory, bitches\n", (long long)st.st_blocks);
 						if (kill(processID, SIGKILL) == 0) 
 							enterLog(logFile, createEntry(concatenate("Successfully killed process number ", dir->d_name)));
 						else
 							enterLog(logFile, createEntry(concatenate("Did NOT successfully kill process number ", dir->d_name)));
-					//suspendthe user and report it
-					} else if (strcmp("suspend", action) == 0) {
+					
+
+					//suspend the process and report it
+					} else if ((strcmp("suspend", action) == 0) && isSuspended(dir->d_name) == 0) {
 						enterLog(logFile, createEntry(concatenate("Suspending process number ", dir->d_name)));
 						if (kill(processID, SIGTSTP) == 0)
 							enterLog(logFile, createEntry(concatenate("Successfully suspended process number ", dir->d_name)));
 						else
 							enterLog(logFile, createEntry(concatenate("Did NOT successfully suspend process number ", dir->d_name)));
 					
-					//nice the user and report it
+
+					//nice the process and report it
 					} else if (strcmp("nice", action) == 0) {
-						enterLog(logFile, createEntry(concatenate("Nicing process number ", dir->d_name)));
-						if (setpriority(PRIO_PROCESS, processID, LOWERPRIORITY) == 0) 
-							enterLog(logFile, createEntry(concatenate("Successfully niced process number ", dir->d_name)));
-						else
-							enterLog(logFile, createEntry(concatenate("Did NOT successfully nice process number ", dir->d_name)));
+						if (getpriority(PRIO_PROCESS, processID) > -20) {
+						
+							enterLog(logFile, createEntry(concatenate("Nicing process number ", dir->d_name)));
+							if (setpriority(PRIO_PROCESS, processID, LOWERPRIORITY) == 0) 
+								enterLog(logFile, createEntry(concatenate("Successfully niced process number ", dir->d_name)));
+							else
+								enterLog(logFile, createEntry(concatenate("Did NOT successfully nice process number ", dir->d_name)));
+						}
 					}
 				} 
 
@@ -189,72 +224,106 @@ int killit(char * action, char * type, char * param, FILE **logFile) {
 				char * callingDir = malloc(70);
 				char * procpath = concatenate(concatenate("/proc/", dir->d_name), "/exe");
 				char   root[256];
+
 				//read all of the exe files within the /proc/*/ directory
 				readlink(procpath, callingDir, 70);
-						
-				//printf("%s is the path\n", pathname);
-
-				if (strcmp(param, "/Documents") == 0) {
-					printf("works\n");
-				}
 
 				//get first n characters of the string
 				strncpy(root, callingDir, strlen(param));
 				//null terminate destination
 				root[strlen(param)] = 0;
-				//printf("%s\n", root);
 				 
 				//if the directory matches the listed one
 				if (strcmp(root, param) == 0) {
-					//printf("hello\n");
+					
+					//kill the process, report it
 					if (strcmp("kill", action) == 0) {
 						enterLog(logFile, createEntry(concatenate("Killing process number ", dir->d_name)));
 						if (kill(processID, SIGKILL) == 0) 
 							enterLog(logFile, createEntry(concatenate("Successfully killed process number ", dir->d_name)));
 						else
 							enterLog(logFile, createEntry(concatenate("Did NOT successfully kill process number ", dir->d_name)));
-					} else if (strcmp("suspend", action) == 0) {
-						
+					
+
+					//suspend the process, report it
+					} else if ((strcmp("suspend", action) == 0) && isSuspended(dir->d_name) == 0) {
 						enterLog(logFile, createEntry(concatenate("Suspending process number ", dir->d_name)));
 						if (kill(processID, SIGTSTP) == 0)
 							enterLog(logFile, createEntry(concatenate("Successfully suspended process number ", dir->d_name)));
 						else
 							enterLog(logFile, createEntry(concatenate("Did NOT successfully suspend process number ", dir->d_name)));
 					
+					
+					//nice the process
 					} else if (strcmp("nice", action) == 0) {
 						
-						enterLog(logFile, createEntry(concatenate("Nicing process number ", dir->d_name)));
-						if (setpriority(PRIO_PROCESS, processID, LOWERPRIORITY) == 0) 
-							enterLog(logFile, createEntry(concatenate("Successfully niced process number ", dir->d_name)));
-						else
-							enterLog(logFile, createEntry(concatenate("Did NOT successfully nice process number ", dir->d_name)));
+
+						if (getpriority(PRIO_PROCESS, processID) > -20) {
+							enterLog(logFile, createEntry(concatenate("Nicing process number ", dir->d_name)));
+							if (setpriority(PRIO_PROCESS, processID, LOWERPRIORITY) == 0) 
+								enterLog(logFile, createEntry(concatenate("Successfully niced process number ", dir->d_name)));
+							else
+								enterLog(logFile, createEntry(concatenate("Did NOT successfully nice process number ", dir->d_name)));
+						}
 					}
 				}
 
 
 
 			//if we are affecting based on memory
-			} else if (strcmp(type, "memory") == 0) {
-				//printf("%d memory, bitches\n", (int)st.st_size);		
+			} else if (strcmp(type, "memory") == 0) {	
 				//open the statm file of each process to read the mem usage
 				statmFile = fopen(concatenate(concatenate("/proc/", dir->d_name), "/statm"),"r");
-				if(!statmFile){
-					printf("no statm file\n");;
-					//break;
+				if(statmFile == NULL){
+					continue;
+
 				} else {
-					//place the rss into a variable we can use
+					//place the rss into a variable we can use. multiply by 4K to get the bytes used
 					fscanf(statmFile,"%ld %ld", &nothing ,&actualMemoryUsed);
-					//printf("process %s using %ld memory\n", dir->d_name, actualMemoryUsed);
-					
+					actualMemoryUsed *= 4096;
+					char * stringBytes = concatenate(param, "000000");
+					int numberBytesAllowed = atoi(stringBytes);
+
+					//if the process is using more than is allowed, handle it
+					if (actualMemoryUsed > numberBytesAllowed) {
+
+
+						if (strcmp("kill", action) == 0) {
+							enterLog(logFile, createEntry(concatenate("Killing process number ", dir->d_name)));
+							if (kill(processID, SIGKILL) == 0) 
+								enterLog(logFile, createEntry(concatenate("Successfully killed process number ", dir->d_name)));
+							else
+								enterLog(logFile, createEntry(concatenate("Did NOT successfully kill process number ", dir->d_name)));
+						
+
+						} else if ((strcmp("suspend", action) == 0) && isSuspended(dir->d_name) == 0) {
+							
+							enterLog(logFile, createEntry(concatenate("Suspending process number ", dir->d_name)));
+							if (kill(processID, SIGTSTP) == 0)
+								enterLog(logFile, createEntry(concatenate("Successfully suspended process number ", dir->d_name)));
+							else
+								enterLog(logFile, createEntry(concatenate("Did NOT successfully suspend process number ", dir->d_name)));
+						
+						
+
+						} else if (strcmp("nice", action) == 0) {
+							//if the nice value is not already the lowest value, change it
+							if (getpriority(PRIO_PROCESS, processID) > -20) {
+								enterLog(logFile, createEntry(concatenate("Nicing process number ", dir->d_name)));
+								if (setpriority(PRIO_PROCESS, processID, LOWERPRIORITY) == 0) 
+									enterLog(logFile, createEntry(concatenate("Successfully niced process number ", dir->d_name)));
+								else
+									enterLog(logFile, createEntry(concatenate("Did NOT successfully nice process number ", dir->d_name)));
+							}
+						}
+					}
 				}
+				fclose(statmFile);
 			}	    
 		}
-
 	closedir(d);
 	}
-
-	
-	return FAILURE;
+	return SUCCESS;
 }
 
 
@@ -279,7 +348,7 @@ void main (int argc, char *argv[]) {
 	char * type = " ";
 	char * param = " ";
 
-
+	signal(SIGINT, youDontControlMe);
 
 	parse_inputs(argc, argv, &log, &config);
 
@@ -297,20 +366,24 @@ void main (int argc, char *argv[]) {
 	//log the start of parsing
 	enterLog(&logFile, createEntry(concatenate("parsing configuration file ", config)));	
 	
-	//start actually parsing
-	while ((read = getline(&line, &length, configFile)) != -1) {
-    	//if this line is an actual command
-        if (line[0] != '#' && read > 1) {
-        	command = strtok(line, " ");
-		    action = command;
-		    command = strtok (NULL, " ");
-		    type = command;
-		    command = strtok (NULL, " \n");
-		    param = command;
-		    killit(action, type, param, &logFile);
-		}	
-    }
-
+	while(keepRunning) {
+		//start actually parsing
+		while ((read = getline(&line, &length, configFile)) != -1) {
+	    	//if this line is an actual command
+	    	if (line[0] != '#' && read > 1) {
+	        	command = strtok(line, " ");
+			    action = command;
+			    command = strtok (NULL, " ");
+			    type = command;
+			    command = strtok (NULL, " \n");
+			    param = command;
+			    killit(action, type, param, &logFile);
+			}	
+	    }
+	    //wait one second and rewind to the top of the config file
+	    sleep(1);
+	    fseek(configFile, 0, SEEK_SET);
+	}
 
 
 	//enter the end of the program	
