@@ -133,16 +133,19 @@ int killit(char * action, char * type, char * param, FILE **logFile) {
 		//read through all files and find the owner, if it is blacklist owner, kill it
 		while ((dir = readdir(d)) != NULL) {
 
+			stat(concatenate("/proc/",dir->d_name), &st);
+		    struct passwd *pass;
+			pass = getpwuid(st.st_uid);
+
+			//printf("%s\n", dir->d_name);
+			processID = atoi(dir->d_name);
+
 			//if we need to mess with the user
 			if (strcmp(type, "user") == 0) {
 	
-		      	stat(concatenate("/proc/",dir->d_name), &st);
-		    	struct passwd *pass;
-				pass = getpwuid(st.st_uid);
 				//kill the process if it is the blacklisted user
 				if (strcmp(pass->pw_name, param) == 0) {
-					printf("%s\n", dir->d_name);
-					processID = atoi(dir->d_name);
+					
 					//kill the user and report it
 					if (strcmp("kill", action) == 0) {
 						enterLog(logFile, createEntry(concatenate("Killing process number ", dir->d_name)));
@@ -166,20 +169,64 @@ int killit(char * action, char * type, char * param, FILE **logFile) {
 						else
 							enterLog(logFile, createEntry(concatenate("Did NOT successfully nice process number ", dir->d_name)));
 					}
-				}
+				} 
+
+
 
 			//if we are affecting based on path
 			} else if (strcmp(type, "path") == 0) {
 				//pathname is the path found by readlink based on the pid
-				char * pathname = malloc(70);
+				char * callingDir = malloc(70);
 				char * procpath = concatenate(concatenate("/proc/", dir->d_name), "/exe");
-				readlink(procpath, pathname, 70);
-				printf("%s\n", pathname);
+				char   root[256];
+				//read all of the exe files within the /proc/*/ directory
+				readlink(procpath, callingDir, 70);
+						
+				//printf("%s is the path\n", pathname);
+
+				if (strcmp(param, "/Documents") == 0) {
+					printf("works\n");
+				}
+
+				//get first n characters of the string
+				strncpy(root, callingDir, strlen(param));
+				//null terminate destination
+				root[strlen(param)] = 0;
+				//printf("%s\n", root);
+				 
+				//if the directory matches the listed one
+				if (strcmp(root, param) == 0) {
+					//printf("hello\n");
+					if (strcmp("kill", action) == 0) {
+						enterLog(logFile, createEntry(concatenate("Killing process number ", dir->d_name)));
+						if (kill(processID, SIGKILL) == 0) 
+							enterLog(logFile, createEntry(concatenate("Successfully killed process number ", dir->d_name)));
+						else
+							enterLog(logFile, createEntry(concatenate("Did NOT successfully kill process number ", dir->d_name)));
+					} else if (strcmp("suspend", action) == 0) {
+						
+						enterLog(logFile, createEntry(concatenate("Suspending process number ", dir->d_name)));
+						if (kill(processID, SIGTSTP) == 0)
+							enterLog(logFile, createEntry(concatenate("Successfully suspended process number ", dir->d_name)));
+						else
+							enterLog(logFile, createEntry(concatenate("Did NOT successfully suspend process number ", dir->d_name)));
+					
+					} else if (strcmp("nice", action) == 0) {
+						
+						enterLog(logFile, createEntry(concatenate("Nicing process number ", dir->d_name)));
+						if (setpriority(PRIO_PROCESS, processID, LOWERPRIORITY) == 0) 
+							enterLog(logFile, createEntry(concatenate("Successfully niced process number ", dir->d_name)));
+						else
+							enterLog(logFile, createEntry(concatenate("Did NOT successfully nice process number ", dir->d_name)));
+					}
+				}
+
+
+
 			//if we are affecting based on memory
 			} else if (strcmp(type, "memory") == 0) {
-				
+								
 
-				//printf("mem mem\n");
 			}	    
 		}
 
@@ -190,10 +237,8 @@ int killit(char * action, char * type, char * param, FILE **logFile) {
 	return FAILURE;
 }
 
-void suspendit(char * type, char * param) {
 
 
-}
 
 void main (int argc, char *argv[]) {
 
