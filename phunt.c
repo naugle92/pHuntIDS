@@ -1,20 +1,14 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/select.h>
 #include <unistd.h>
 #include <signal.h>
-#include <getopt.h>
 #include <time.h>
 #include <sys/utsname.h>
-#include <sys/types.h>
-#include <pwd.h>
 #include <sys/stat.h>
 #include <pwd.h>
 #include <dirent.h> 
-#include <sys/time.h> 
 #include <sys/resource.h>
-#include <sys/ptrace.h>
 
 #define ERR -1
 #define logSize 200
@@ -57,19 +51,23 @@ void parse_inputs (int argc, char *argv[], char **logFile, char **configFile) {
 //open the log and config files if they can be opened, otherwise throw an error
 void openFiles (FILE **logFile, FILE **configFile, char *log, char *config) {
 	*logFile = fopen(log, "a");
-	if (*logFile == NULL) 
-		perror ("Error opening log file");
-	
+	if (*logFile == NULL) {
+		printf("Error opening log file\n");
+		exit(0);
+	}
 	if( access( config, R_OK ) != -1 ) {
     // file exists and we are able to read it
 		*configFile = fopen(config, "r");
-		if (*configFile == NULL) 
-			perror ("Error opening config file");
+		if (*configFile == NULL) {
+			printf("Error opening config file\n");
+			fclose(*logFile);	
+			exit(0);
+		}
 	} else {
     // file doesn't exist
 		printf("Config file %s does not exist or is not accessible\n", config);
 		fclose(*logFile);
-		exit(ERR);
+		exit(0);
 	}
 }
 
